@@ -89,19 +89,36 @@ function analyzeVWAP(data) {
   let upperBand2 = null;
   let lowerBand2 = null;
 
+  function parseNum(s) {
+    return Number(String(s).replace(/,/g, "").replace(/[^\d.\-]/g, ""));
+  }
+
   for (const study of studies) {
-    const lower = (study.name || "").toLowerCase();
-    if (lower.includes("vwap") || lower.includes("anchored")) {
-      const vals = study.values || {};
-      const nums = Object.values(vals).map(Number).filter((n) => !isNaN(n));
-      if (nums.length >= 1) vwap = nums[0];
-      if (nums.length >= 3) {
-        upperBand1 = nums[1];
-        lowerBand1 = nums[2];
+    const nameLower = (study.name || "").toLowerCase();
+    const vals = study.values || {};
+    const keysLower = Object.keys(vals).map((k) => k.toLowerCase());
+    const nameMatch = nameLower.includes("vwap") || nameLower.includes("anchored");
+    const keyMatch = keysLower.some((k) => k.includes("vwap"));
+
+    if (nameMatch || keyMatch) {
+      const entries = Object.entries(vals);
+      const vwapEntry = entries.find(([k]) => k.toLowerCase().includes("vwap"));
+      if (vwapEntry) {
+        vwap = parseNum(vwapEntry[1]);
       }
-      if (nums.length >= 5) {
-        upperBand2 = nums[3];
-        lowerBand2 = nums[4];
+      const bandEntries = entries.filter(([k]) => !k.toLowerCase().includes("vwap"));
+      const bandNums = bandEntries.map(([, v]) => parseNum(v)).filter((n) => !isNaN(n));
+      if (bandNums.length >= 2) {
+        upperBand1 = Math.max(bandNums[0], bandNums[1]);
+        lowerBand1 = Math.min(bandNums[0], bandNums[1]);
+      }
+      if (bandNums.length >= 4) {
+        upperBand2 = Math.max(...bandNums);
+        lowerBand2 = Math.min(...bandNums);
+      }
+      if (!vwap && bandNums.length === 0) {
+        const allNums = entries.map(([, v]) => parseNum(v)).filter((n) => !isNaN(n));
+        if (allNums.length >= 1) vwap = allNums[0];
       }
     }
   }
