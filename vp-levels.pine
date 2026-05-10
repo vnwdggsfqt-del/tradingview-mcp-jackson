@@ -1,0 +1,69 @@
+//@version=6
+indicator("VP Levels (POC/VAH/VAL)", overlay=true, max_lines_count=3, max_labels_count=3)
+
+numRows   = input.int(50, "Number of Rows", minval=10, maxval=200)
+vaPercent = input.float(70.0, "Value Area %", minval=50, maxval=90) / 100.0
+
+var float[] volAtRow = array.new_float(numRows, 0.0)
+var float  sessionHigh = na
+var float  sessionLow  = na
+var line   pocLine = na, var line vahLine = na, var line valLine = na
+var label  pocLbl  = na, var label vahLbl  = na, var label valLbl  = na
+
+isNewSession = ta.change(time("D")) != 0
+
+if isNewSession
+    array.fill(volAtRow, 0.0)
+    sessionHigh := high
+    sessionLow  := low
+
+sessionHigh := math.max(nz(sessionHigh, high), high)
+sessionLow  := math.min(nz(sessionLow, low), low)
+
+rowSize = (sessionHigh - sessionLow) / numRows
+if rowSize > 0
+    row = math.min(math.floor((close - sessionLow) / rowSize), numRows - 1)
+    array.set(volAtRow, row, array.get(volAtRow, row) + volume)
+
+pocRow    = 0
+pocVol    = 0.0
+totalVol  = 0.0
+for i = 0 to numRows - 1
+    v = array.get(volAtRow, i)
+    totalVol += v
+    if v > pocVol
+        pocVol := v
+        pocRow := i
+
+pocPrice = sessionLow + (pocRow + 0.5) * rowSize
+
+vaTarget = totalVol * vaPercent
+vaVol    = pocVol
+hiRow    = pocRow
+loRow    = pocRow
+while vaVol < vaTarget and (hiRow < numRows - 1 or loRow > 0)
+    upVol = hiRow < numRows - 1 ? array.get(volAtRow, hiRow + 1) : 0.0
+    dnVol = loRow > 0           ? array.get(volAtRow, loRow - 1) : 0.0
+    if upVol >= dnVol and hiRow < numRows - 1
+        hiRow += 1
+        vaVol += upVol
+    else if loRow > 0
+        loRow -= 1
+        vaVol += dnVol
+    else
+        break
+
+vahPrice = sessionLow + (hiRow + 1) * rowSize
+valPrice = sessionLow + loRow * rowSize
+
+if barstate.islast
+    line.delete(pocLine), line.delete(vahLine), line.delete(valLine)
+    label.delete(pocLbl), label.delete(vahLbl), label.delete(valLbl)
+
+    pocLine := line.new(bar_index - 20, pocPrice, bar_index, pocPrice, color=color.orange, width=2, style=line.style_solid)
+    vahLine := line.new(bar_index - 20, vahPrice, bar_index, vahPrice, color=color.teal,   width=1, style=line.style_dashed)
+    valLine := line.new(bar_index - 20, valPrice, bar_index, valPrice, color=color.teal,   width=1, style=line.style_dashed)
+
+    pocLbl := label.new(bar_index, pocPrice, "POC " + str.tostring(pocPrice, format.mintick), style=label.style_none, textcolor=color.orange, size=size.small)
+    vahLbl := label.new(bar_index, vahPrice, "VAH " + str.tostring(vahPrice, format.mintick), style=label.style_none, textcolor=color.teal,   size=size.small)
+    valLbl := label.new(bar_index, valPrice, "VAL " + str.tostring(valPrice, format.mintick), style=label.style_none, textcolor=color.teal,   size=size.small)

@@ -106,17 +106,19 @@ function analyzeVWAP(data) {
       if (vwapEntry) {
         vwap = parseNum(vwapEntry[1]);
       }
-      const bandEntries = entries.filter(([k]) => !k.toLowerCase().includes("vwap"));
-      const bandNums = bandEntries.map(([, v]) => parseNum(v)).filter((n) => !isNaN(n));
-      if (bandNums.length >= 2) {
-        upperBand1 = Math.max(bandNums[0], bandNums[1]);
-        lowerBand1 = Math.min(bandNums[0], bandNums[1]);
+      for (const [k, v] of entries) {
+        const kl = k.toLowerCase();
+        if (kl.includes("vwap")) continue;
+        const n = parseNum(v);
+        if (isNaN(n)) continue;
+        if ((kl.includes("inner") || kl.includes("1")) && kl.includes("upper")) upperBand1 = n;
+        else if ((kl.includes("inner") || kl.includes("1")) && kl.includes("lower")) lowerBand1 = n;
+        else if ((kl.includes("outer") || kl.includes("2")) && kl.includes("upper")) upperBand2 = n;
+        else if ((kl.includes("outer") || kl.includes("2")) && kl.includes("lower")) lowerBand2 = n;
+        else if (kl.includes("upper") && !upperBand1) upperBand1 = n;
+        else if (kl.includes("lower") && !lowerBand1) lowerBand1 = n;
       }
-      if (bandNums.length >= 4) {
-        upperBand2 = Math.max(...bandNums);
-        lowerBand2 = Math.min(...bandNums);
-      }
-      if (!vwap && bandNums.length === 0) {
+      if (!vwap && !upperBand1 && !lowerBand1) {
         const allNums = entries.map(([, v]) => parseNum(v)).filter((n) => !isNaN(n));
         if (allNums.length >= 1) vwap = allNums[0];
       }
@@ -140,9 +142,14 @@ function analyzeVWAP(data) {
 }
 
 function analyzeVolumeProfile(data) {
-  const { pineLines, pineLabels, pineTables } = data;
+  const { pineLines, pineLabels, pineTables, studyValues } = data;
   const levels = { poc: null, vah: null, val: null, hvns: [], lvns: [] };
 
+  function parseNum(s) {
+    return Number(String(s).replace(/,/g, "").replace(/[^\d.\-]/g, ""));
+  }
+
+  // Check pine labels for POC/VAH/VAL text
   const allLabels = [];
   if (pineLabels?.studies) {
     for (const study of Object.values(pineLabels.studies)) {
@@ -156,9 +163,23 @@ function analyzeVolumeProfile(data) {
     const price = label.price ?? label.y;
     if (txt.includes("POC")) levels.poc = price;
     else if (txt.includes("VAH")) levels.vah = price;
-    else if (txt.includes("VAL")) levels.val = price;
+    else if (txt.includes("VAL") && !txt.includes("VALUE")) levels.val = price;
     else if (txt.includes("HVN")) levels.hvns.push(price);
     else if (txt.includes("LVN")) levels.lvns.push(price);
+  }
+
+  // Fallback: check study values for POC/VAH/VAL keys
+  if (!levels.poc || !levels.vah || !levels.val) {
+    for (const study of (studyValues?.studies || [])) {
+      for (const [k, v] of Object.entries(study.values || {})) {
+        const kl = k.toLowerCase();
+        const n = parseNum(v);
+        if (isNaN(n)) continue;
+        if (!levels.poc && kl.includes("poc")) levels.poc = n;
+        else if (!levels.vah && kl.includes("vah")) levels.vah = n;
+        else if (!levels.val && kl.includes("val") && !kl.includes("value")) levels.val = n;
+      }
+    }
   }
 
   const allLines = [];
@@ -386,6 +407,8 @@ async function run() {
   if (vwapResult.vwap) {
     console.log(`  VWAP:     ${vwapResult.vwap}`);
     console.log(`  Position: ${vwapResult.position} (${vwapResult.distPct}% from VWAP)`);
+    if (vwapResult.upperBand1) console.log(`  ±1σ:      ${vwapResult.upperBand1} / ${vwapResult.lowerBand1}`);
+    if (vwapResult.upperBand2) console.log(`  ±2σ:      ${vwapResult.upperBand2} / ${vwapResult.lowerBand2}`);
   } else {
     console.log("  VWAP:     ⚠ Not detected — add VWAP indicator to chart");
   }
