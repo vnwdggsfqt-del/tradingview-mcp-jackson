@@ -29,7 +29,7 @@ function flag(name) {
 const START_DATE = flag("date") || "2025-05-01";
 const MAX_BARS = parseInt(flag("bars") || "80", 10);
 const SPEED = flag("speed") || "normal"; // "fast" = skip bars without setups
-const WAIT_MS = SPEED === "fast" ? 500 : 1500;
+const WAIT_MS = SPEED === "fast" ? 200 : 1500;
 
 // ── MCP client ──────────────────────────────────────────────────
 let client;
@@ -177,11 +177,12 @@ function analyzeBar(quote, studyValues, pineTables, pineLabels) {
 const trades = [];
 let position = null; // { direction, entryPrice, entryBar, type, target, stop }
 let consecutiveLosses = 0;
+let lastSessionDate = null;
+let sessionTradeCount = 0;
 
 function shouldEnter(analysis, barNum) {
   if (position) return null;
   if (consecutiveLosses >= 3) return null;
-  if (barNum < 5) return null; // skip first 5 bars (let indicators settle)
   if (analysis.bias === "neutral") return null;
   if (analysis.setups.length === 0) return null;
 
@@ -269,6 +270,22 @@ async function run() {
 
     const analysis = analyzeBar(quote, studyValues, pineTables, pineLabels);
 
+    // Detect new session — reset consecutive loss counter
+    const barTime = quote?.time;
+    if (barTime) {
+      const barDate = new Date(barTime * 1000).toISOString().slice(0, 10);
+      if (lastSessionDate && barDate !== lastSessionDate) {
+        if (consecutiveLosses > 0) {
+          console.log(`\n  ── New session: ${barDate} (losses reset from ${consecutiveLosses}) ──`);
+        } else {
+          console.log(`\n  ── New session: ${barDate} ──`);
+        }
+        consecutiveLosses = 0;
+        sessionTradeCount = 0;
+      }
+      lastSessionDate = barDate;
+    }
+
     // Check exit first
     const exitSignal = shouldExit(analysis, bar);
     if (exitSignal) {
@@ -295,7 +312,7 @@ async function run() {
       else consecutiveLosses = 0;
 
       if (consecutiveLosses >= 3) {
-        console.log("\n  ⚠ 3 consecutive losses — stopping per risk rules\n");
+        console.log("  ⚠ 3 consecutive losses — pausing until next session");
       }
 
       position = null;
