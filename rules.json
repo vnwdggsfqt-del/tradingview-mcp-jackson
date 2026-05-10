@@ -1,65 +1,141 @@
 {
   "watchlist": ["BTCUSDT"],
-  "default_timeframe": "1",
+  "default_timeframe": "15",
 
   "strategy": {
-    "name": "10-Second Momentum Scalper",
+    "name": "VWAP + Volume Profile Intraday",
+    "style": "Intraday — hold minutes to hours, flat by session close",
     "sources": [
-      "Price momentum — buy if last close > previous close (green candle)",
-      "RSI filter — only trade when RSI is not at an extreme (30–70 range)"
+      "VWAP — dynamic mean-reversion anchor and trend filter",
+      "Volume Profile (session/visible range) — identify POC, VAH, VAL for S/R",
+      "Price Action — candle patterns, structure breaks, and failed auctions at key levels"
     ],
     "primary_timeframes": [
-      "1-minute (signal source)",
-      "10-second execution loop"
+      "15-minute (primary signal and trade management)",
+      "5-minute (precision entry timing)",
+      "1-hour (context and bias — higher timeframe trend)"
     ]
   },
 
   "indicators": {
-    "rsi_14": "Momentum filter. Only trade when RSI is between 30–70 (avoid extremes).",
-    "price_momentum": "Compare last close vs previous close. Up = long signal. Down = short signal."
+    "vwap": "Anchored to session open. Price above VWAP = bullish intraday bias. Below = bearish. Bands (1σ, 2σ) mark overextension zones.",
+    "volume_profile": "Session or visible-range VP. POC = fair value / magnet. VAH/VAL = value area boundaries. HVN = congestion / support. LVN = fast-move zones / rejection.",
+    "price_action": "Higher highs/lows for uptrend, lower highs/lows for downtrend. Key patterns: engulfing, pin bars, inside bars at VWAP or VP levels."
   },
 
   "bias_criteria": {
     "bullish": [
-      "Last 1-min candle closed higher than the one before it",
-      "RSI is between 30 and 70"
+      "Price trading above VWAP on 15m",
+      "Price accepted above POC or reclaimed VAH",
+      "1H structure shows higher lows",
+      "Volume increasing on up-moves"
     ],
     "bearish": [
-      "Last 1-min candle closed lower than the one before it",
-      "RSI is between 30 and 70"
+      "Price trading below VWAP on 15m",
+      "Price rejected from POC or lost VAL",
+      "1H structure shows lower highs",
+      "Volume increasing on down-moves"
     ],
     "neutral": [
-      "RSI is above 70 (overbought — skip)",
-      "RSI is below 30 (oversold — skip)",
-      "Candle close change is less than 0.05% (chop — skip)"
+      "Price chopping around VWAP with no directional commitment",
+      "Price inside value area with no breakout attempt",
+      "Low volume / lunchtime / pre-news consolidation"
     ]
   },
 
   "entry_rules": {
-    "long": [
-      "Last close > previous close by at least 0.05%",
-      "RSI between 30 and 70",
-      "Enter market buy immediately"
+    "trend_continuation": {
+      "long": [
+        "Bias is bullish (price above VWAP, above POC)",
+        "Price pulls back to VWAP or VAL and holds",
+        "Bullish price action at the level (engulfing, pin bar, or demand candle)",
+        "Enter on 5m confirmation candle close"
+      ],
+      "short": [
+        "Bias is bearish (price below VWAP, below POC)",
+        "Price rallies to VWAP or VAH and rejects",
+        "Bearish price action at the level (engulfing, shooting star, or supply candle)",
+        "Enter on 5m confirmation candle close"
+      ]
+    },
+    "mean_reversion": {
+      "long": [
+        "Price reaches VWAP -2σ band or below VAL",
+        "Volume profile shows HVN (prior support) nearby",
+        "Bullish reversal candle (hammer, engulfing) on 5m",
+        "Only take if 1H trend is not strongly bearish"
+      ],
+      "short": [
+        "Price reaches VWAP +2σ band or above VAH",
+        "Volume profile shows HVN (prior resistance) nearby",
+        "Bearish reversal candle (shooting star, engulfing) on 5m",
+        "Only take if 1H trend is not strongly bullish"
+      ]
+    },
+    "breakout": {
+      "long": [
+        "Price breaks above VAH with strong momentum candle",
+        "Volume on breakout bar is 1.5x+ average",
+        "Retest of VAH holds as support (failed auction below)",
+        "Enter on 5m close above VAH after retest"
+      ],
+      "short": [
+        "Price breaks below VAL with strong momentum candle",
+        "Volume on breakout bar is 1.5x+ average",
+        "Retest of VAL holds as resistance (failed auction above)",
+        "Enter on 5m close below VAL after retest"
+      ]
+    }
+  },
+
+  "exit_rules": {
+    "targets": [
+      "T1: Next VP level (POC, VAH, or VAL) — take 50% off",
+      "T2: VWAP band (±1σ or ±2σ depending on entry type) — take remaining",
+      "Breakout trades: trail stop below/above each new HVN as price discovers"
     ],
-    "short": [
-      "Last close < previous close by at least 0.05%",
-      "RSI between 30 and 70",
-      "Enter market sell immediately"
+    "stop_loss": [
+      "Below/above the entry-level structure (swing low/high on 5m)",
+      "Maximum 1 ATR(14) on the 15m chart",
+      "If price closes back inside value area after breakout, exit immediately"
+    ],
+    "time_stop": [
+      "If trade hasn't moved toward target within 30 minutes, tighten stop to breakeven",
+      "Close all positions before session end — no overnight holds"
     ]
   },
 
-  "exit_rules": [
-    "Exit automatically after 10 seconds (next loop tick closes previous position)",
-    "No manual exit management — pure time-based scalp"
-  ],
-
   "risk_rules": [
-    "Fixed trade size: 1% of portfolio per trade",
-    "Maximum trade size: $3.00",
-    "Maximum 6 trades per 60-second run",
-    "No stop loss — exit is time-based at next tick",
-    "For demo purposes only — minimum BitGet order size may apply"
+    "Risk 1% of account per trade",
+    "Maximum 3 concurrent positions",
+    "Maximum 3 losses in a row — stop trading for the session",
+    "No trading in first 5 minutes of session (let VWAP and VP establish)",
+    "No trading during major news events (wait 5 minutes after release)",
+    "R:R minimum 1.5:1 before entering"
   ],
 
-  "notes": "Demo strategy for YouTube video. Runs 6 trades over 60 seconds, one every 10 seconds. Signal is simple price momentum on 1-min candles with RSI sanity check."
+  "session_routine": {
+    "pre_market": [
+      "Mark prior session POC, VAH, VAL on chart",
+      "Note overnight high/low and any gaps",
+      "Identify key news events for the day"
+    ],
+    "first_15_minutes": [
+      "Observe — let opening range and VWAP establish",
+      "Identify initial balance high/low",
+      "Note where volume is building (developing POC)"
+    ],
+    "active_trading": [
+      "Trade setups from entry_rules above",
+      "Monitor developing VP for shifting POC",
+      "Track VWAP slope for trend strength"
+    ],
+    "last_30_minutes": [
+      "No new entries",
+      "Close remaining positions",
+      "Log trades and review"
+    ]
+  },
+
+  "notes": "Intraday framework combining VWAP (trend filter + mean reversion anchor), Volume Profile (key levels), and Price Action (confirmation). Three setup types: trend continuation, mean reversion, and breakout. All trades closed by session end."
 }
